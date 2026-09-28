@@ -1,5 +1,6 @@
 from dotenv import load_dotenv
 from flask import Flask
+from flask import request, jsonify
 from flask_cors import CORS
 
 from .config import Config
@@ -22,7 +23,6 @@ def create_app(config_class=Config):
                 "origins": [
                     "http://localhost:5173",
                     "http://127.0.0.1:5173",
-                    "http://10.10.1.149:5173",
                 ],
             },
         },
@@ -35,8 +35,9 @@ def create_app(config_class=Config):
 
     @app.get("/health")
     def health():
-        return {
+        return jsonify ({
             "status": "ok",
-        }
+            "request_port": int(request.environ["SERVER_PORT"]),
+        })
 
     return app
