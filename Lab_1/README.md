@@ -2,6 +2,9 @@
 # 📝 Лабораторная работа №1 (без *)
 В этот раз, мы всей командой решили подготовить минисервер в виде виртуальной машины, чтобы не ставить вторую систему на ноутбук. С первого семестра у нас остался VirtualBox. Мы создали новую виртуальную машину и установили на нее ОС Ubuntu 26.04.   
 
+# 📝 Что мы сделали:
+
+
 # 🛠️ Как это было
 ## День 1-й. Ставим nginx и пробуем выпустить ssl-сертификат  
 ### Ставим nginx  
@@ -162,6 +165,49 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
 
 </details>
 
+## День 2-й. Оживляем наш frontend по https
+### Сборка frontend
+Для начала надо собрать наш frontend по-взрослому командой:
+   ```bash
+  npm run build
+  ```
+Установили npm:
+   ```bash
+  sudo apt install npm
+  ```
+В папке frontend выполнили установку зависимостей:
+   ```bash
+  npm install
+  ```
+Затем в папке frontend выполнили сборку:
+   ```bash
+  npm run build
+  ```
+
+<details>
+  <summary>ops неудачка </summary>
+
+![img.png](Screenshots/build_fail.png)
+
+</details>
+
+Для экономии времени просто отключили проверку типов в файле frontend/package.json, исправив строку сборки так:
+"build": "~~tsc -b &&~~ vite build", чтобы в итоге получилось:
+   ```text
+    ...
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "lint": "oxlint",
+    "preview": "vite preview"
+  }
+  ...
+```
+Теперь сборка проходит и результат сборки находится в папке dist. Перенесли папку dist со всем содержимым в папку /var/www/Notes.app:
+
+   ```bash
+    sudo mv dist /var/www/Notes.app 
+  ```
 ### Подключаем самоподписной ssl-сертификат к nginx
 Положили файл notes-app.key в каталог /etc/ssl/private/:
    ```bash
@@ -173,10 +219,184 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
   ```
 Создали файл настройки нашего сервиса:
    ```bash
-    sudo nano /etc/nginx/sites-enabled/notes-app 
+    sudo nano /etc/nginx/sites-available/notes-app 
+  ```
+![img.png](Screenshots/notes_app1.png)
+
+Сделали симлинк в sites-enabled:
+   ```bash
+    sudo ln -s /etc/nginx/sites-available/notes-app  /etc/nginx/sites-enabled/notes-app 
   ```
 
+Дали команду nginx перечитать конфигурацию и перезапуститься:
+   ```bash
+    sudo nginx -t
+    sudo service nginx reload
+   ```
+Теперь в браузере по адресу https://localhost видим страницу своего frontend, согласившись открыть небезопасный сайт, т.к. браузер не доверяет самоподписному сертификату. 
 
+## День 3-й. Настраиваем nginx на проксирование Backend
+### Разбираемся с базой данных PostgreSQL на Ubuntu
+Поставили PostgreSQL:
+   ```bash
+    sudo apt install -y postgresql postgresql-contrib    
+   ```
+Дальше настроим доступ на наш PostgreSQL сервер снаружи, чтобы можно было подключиться используя PgAdmin:
+   ```bash
+    sudo cp /etc/postgresql/18/main/postgresql.conf /etc/postgresql/18/main/postgresql.conf.bak
+    sudo nano /etc/postgresql/18/main/postgresql.conf   
+   ```
+Нашли строку в /etc/postgresql/18/main/postgresql.conf:
 
+   ```text
+    #listen_addresses = 'localhost'
+   ```
+и заменили ее так:
+   ```text
+    listen_addresses = '*'
+   ```
+Разрешили подключения в pg_hba.conf
+   ```bash
+    sudo cp /etc/postgresql/18/main/pg_hba.conf /etc/postgresql/18/main/pg_hba.conf.bak
+    sudo nano /etc/postgresql/18/main/pg_hba.conf   
+   ```
+Нашли строку в /etc/postgresql/18/main/pg_hba.conf:
 
-## День 2-й. Backend начало
+   ```text
+    host    all             all             127.0.0.1/32            scram-sha-256
+   ```
+и заменили ее так:
+   ```text
+    host    all             all             0.0.0.0/0            scram-sha-256
+   ```
+Заменили пароль пользователю postgres:
+   ```bash
+    sudo -u postgres psql
+   ```
+   ```sql
+    ALTER USER postgres WITH PASSWORD 'passwordexample';
+   ```
+где 'passwordexample' дан только для примера. Реальный пароль другой и здесь опубликован не будет.
+
+Перечитали конфигурацию:
+   ```bash
+    sudo systemctl reload postgresql
+   ```
+Теперь можем подключиться с любого компа, который видит ip-адрес нашей виртуалки к установленному на ней PostgreSQL серверу.
+Подключились PgAdmin 4 и создали базу для бэкенда, как в лабе 0.
+Выполнили шаги по установке бэкенда, как в лабе 0.
+
+### Добавляем проксирование backend в конфигурацию нашего сервиса
+Пытаемся доделать настройки нашего сервиса:
+   ```bash
+    sudo nano /etc/nginx/sites-available/notes-app 
+  ```
+Сейчас файл настройки нашего сайта выглядит так:
+![img.png](Screenshots/notes_app2.png)
+
+Дали команду nginx перечитать конфигурацию и перезапуститься:
+   ```bash
+    sudo nginx -t
+    sudo service nginx reload
+   ```
+Теперь сервис "Наши заметки" полностью работает (если не забыть запустить хотя бы одни экземпляр нашего backend) и доступен по https, например https://127.0.0.1 или https://localhost.
+Осталось настроить редирект с http на https. 
+
+### Hастраиваем редирект с http на https
+Снова открываем на редактирование файл настройки нашего сервиса, чтобы сделать редирект с http на https:
+   ```bash
+    sudo nano /etc/nginx/sites-available/notes-app 
+  ```
+Чтобы не мешал дефолтный сайт nginx отключаем его:
+   ```bash
+    sudo unlink /etc/nginx/sites-enabled/default 
+  ```
+Дали команду nginx перечитать конфигурацию и перезапуститься:
+   ```bash
+    sudo nginx -t
+    sudo service nginx reload
+   ```
+Теперь сервис "Наши заметки" полностью работает (если не забыть запустить хотя бы одни экземпляр нашего backend) и доступен как по http, так и по https.
+
+На сегодня пока все.
+
+На текущий момент, файл настройки нашего сайта выглядит так:
+![img.png](Screenshots/notes_app2.png)
+
+## День 4-й. Почти всё, но ещё не всЁ
+### Добавляем свою страницу на обработку ошибки 404 вместо стандартной
+<details>
+  <summary>Сейчас отображение ошибки 404 выглядит вот так</summary>
+
+![img.png](Screenshots/404_nginx.png)
+
+</details>
+
+Скопировали файл Lab_1/404.html в корень нашего сайта:
+
+```bash
+    sudo cp 404.html /var/www/Notes.app
+   ```
+
+<details>
+  <summary>После нашего волшебства над файлом /etc/nginx/sites-available/notes-app отображение ошибки 404 стало выглядеть красиво</summary>
+
+![img.png](Screenshots/404_best.png)
+
+</details>
+
+В итоге, файл настройки сервиса "Наши заметки" выглядит так:
+![img.png](Screenshots/notes_app.png)
+
+### Настраиваем второй виртуальный сервер (второй сайт)
+Эх, что-то с памятью моей стало, хорошо, что записала. Вспоминаем, что делали в первый день:
+Выпустили сертификат для нашего второго сайта. Назовем домен: site2.local и добавим ещё для интереса www.site2.local:
+   ```bash
+    openssl req -x509 -newkey rsa:4096 \
+      -keyout site2-local.key \
+      -out site2-local.crt \
+      -days 1095 -nodes \
+      -subj "/CN=site2.local" \
+      -addext "subjectAltName=DNS:site2.local,DNS:www.site2.local"   
+  ```
+Положили файл site2-local.key в каталог /etc/ssl/private/:
+   ```bash
+    sudo mv site2-local.key /etc/ssl/private/site2-local.key 
+  ```
+Положили файл site2-local.crt в каталог /etc/ssl/certs/:
+   ```bash
+    sudo mv site2-local.crt /etc/ssl/certs/site2-local.crt 
+  ```
+Создали папку нашего второго сайта и положили туда Lab_1/index.html и Lab_1/404.html
+```bash
+  sudo mkdir /var/www/site2.local
+  sudo cp  Lab_1/index.html Lab_1/404.html /var/www/site2.local
+  ```
+```bash
+  sudo cp  Lab_1/index.html Lab_1/404.html /var/www/site2.local
+  ```
+
+Создали файл настройки сайта site2.local, скопировав наш /etc/nginx/sites-available/notes-app:
+   ```bash
+    sudo cp /etc/nginx/sites-available/notes-app /etc/nginx/sites-available/site2-local
+  ```
+Сделали симлинк в sites-enabled:
+   ```bash
+    sudo ln -s /etc/nginx/sites-available/site2-local  /etc/nginx/sites-enabled/site2-local 
+  ```
+
+Дали команду nginx перечитать конфигурацию и перезапуститься:
+   ```bash
+    sudo nginx -t
+    sudo service nginx reload
+   ```
+Теперь в браузере по адресу https://localhost видим страницу своего frontend, согласившись открыть небезопасный сайт, т.к. браузер не доверяет самоподписному сертификату. 
+
+Вставили резолвинг на site2.local и www.site2.local в /etc/hosts 
+![img.png](Screenshots/etc-hosts.png)
+
+Набрали в браузере http://www.site2.local/ согласились с рисками и увидели это:
+![img.png](Screenshots/site2.png)
+
+## День 5-й. Ну теперь-то всё или ещё не всЁ
+
