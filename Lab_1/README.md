@@ -292,6 +292,7 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
     sudo nano /etc/nginx/sites-available/notes-app 
   ```
 Сейчас файл настройки нашего сайта выглядит так:
+
 ![img.png](Screenshots/notes_app2.png)
 
 Дали команду nginx перечитать конфигурацию и перезапуститься:
@@ -346,6 +347,7 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
 </details>
 
 В итоге, файл настройки сервиса "Наши заметки" выглядит так:
+
 ![img.png](Screenshots/notes_app.png)
 
 ### Настраиваем второй виртуальный сервер (второй сайт)
@@ -380,6 +382,10 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
    ```bash
     sudo cp /etc/nginx/sites-available/notes-app /etc/nginx/sites-available/site2-local
   ```
+и поправили его так:
+
+![img.png](Screenshots/site2-local.png)
+
 Сделали симлинк в sites-enabled:
    ```bash
     sudo ln -s /etc/nginx/sites-available/site2-local  /etc/nginx/sites-enabled/site2-local 
@@ -390,13 +396,82 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
     sudo nginx -t
     sudo service nginx reload
    ```
-Теперь в браузере по адресу https://localhost видим страницу своего frontend, согласившись открыть небезопасный сайт, т.к. браузер не доверяет самоподписному сертификату. 
+Вставили резолвинг на site2.local и www.site2.local в /etc/hosts
 
-Вставили резолвинг на site2.local и www.site2.local в /etc/hosts 
 ![img.png](Screenshots/etc-hosts.png)
 
 Набрали в браузере http://www.site2.local/ согласились с рисками и увидели это:
+
 ![img.png](Screenshots/site2.png)
 
+### Настраиваем заглушку для неизвестных виртуальных серверов (сайтов)
+Чтобы nginx ничего не выдал лишнего, кроме наших 2-х сайтов, делаем заглушку:
+
+  ```bash
+    sudo nano /etc/nginx/sites-available/000-catch-all.conf
+  ```
+Содержание файла /etc/nginx/sites-available/000-catch-all.conf:
+
+   ```text
+    # Неизвестные HTTP-имена
+    server {
+        listen 80 default_server;
+        listen [::]:80 default_server;
+    
+        server_name _;
+    
+        return 444;
+    }
+    
+    # Неизвестные HTTPS-имена
+    server {
+        listen 443 ssl default_server;
+        listen [::]:443 ssl default_server;
+    
+        server_name _;
+    
+        ssl_certificate     /etc/ssl/certs/default.crt;
+        ssl_certificate_key /etc/ssl/private/default.key;
+    
+        return 444;
+    }
+   ```
+
+Создали сертификат для https заглушки:
+
+```bash
+sudo openssl req -x509 -nodes -newkey rsa:2048 \
+  -days 3650 \
+  -keyout /etc/ssl/private/default.key \
+  -out /etc/ssl/certs/default.crt \
+  -subj "/CN=invalid.local" \
+  -addext "subjectAltName=DNS:invalid.local"
+```
+Теперь веб-сервер не отдает ничего лишнего (разумеется после чтения конфигурации и перезапуска nginx)  
+   ```bash
+    sudo nginx -t
+    sudo service nginx reload
+   ```
+
 ## День 5-й. Ну теперь-то всё или ещё не всЁ
+### Настраиваем лимиты запросов на /api/
+В конфиг /etc/nginx/nginx.conf внутри http { ... }
+   ```bash
+    sudo nano /etc/nginx/nginx.conf
+   ```
+добавили:
+   ```text
+    # Лимит на каждый IP клиента:
+    # в среднем до 5 запросов/секунду
+    limit_req_zone $binary_remote_addr zone=api_per_ip:10m rate=5r/s;   
+   ```
+Включили лимит в location /api/ нашего сервиса:
+   ```bash
+    sudo nano /etc/nginx/sites-available/notes-app
+   ```
+Чтобы получилось так:
+
+![img.png](Screenshots/limit_req.png)
+
+
 
