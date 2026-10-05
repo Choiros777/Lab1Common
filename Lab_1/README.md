@@ -319,6 +319,13 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
    ```
 Теперь сервис "Наши заметки" полностью работает (если не забыть запустить хотя бы одни экземпляр нашего backend) и доступен как по http, так и по https.
 
+   ```bash
+   cd ./Lab_0/backend
+   source .venv/bin/activate
+   flask --app run.py run --port 5101
+   flask --app run.py run --port 5102
+   ```
+
 На сегодня пока все.
 
 На текущий момент, файл настройки нашего сайта выглядит так:
@@ -369,15 +376,11 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
    ```bash
     sudo mv site2-local.crt /etc/ssl/certs/site2-local.crt 
   ```
-Создали папку нашего второго сайта и положили туда Lab_1/index.html и Lab_1/404.html
+Создали папку нашего второго сайта и положили туда Lab_1/site2/index.html и Lab_1/404.html
 ```bash
   sudo mkdir /var/www/site2.local
-  sudo cp  Lab_1/index.html Lab_1/404.html /var/www/site2.local
+  sudo cp  Lab_1/site2/index.html Lab_1/404.html /var/www/site2.local
   ```
-```bash
-  sudo cp  Lab_1/index.html Lab_1/404.html /var/www/site2.local
-  ```
-
 Создали файл настройки сайта site2.local, скопировав наш /etc/nginx/sites-available/notes-app:
    ```bash
     sudo cp /etc/nginx/sites-available/notes-app /etc/nginx/sites-available/site2-local
@@ -408,9 +411,9 @@ Sep 28 10:30:50 Ubuntu systemd[1]: Started nginx.service - A high performance we
 Чтобы nginx ничего не выдал лишнего, кроме наших 2-х сайтов, делаем заглушку:
 
   ```bash
-    sudo nano /etc/nginx/sites-available/000-catch-all.conf
+    sudo nano /etc/nginx/sites-available/000-catch-all
   ```
-Содержание файла /etc/nginx/sites-available/000-catch-all.conf:
+Содержание файла /etc/nginx/sites-available/000-catch-all:
 
    ```text
     # Неизвестные HTTP-имена
@@ -473,5 +476,72 @@ sudo openssl req -x509 -nodes -newkey rsa:2048 \
 
 ![img.png](Screenshots/limit_req.png)
 
+### Настраиваем alias на /docs
+Решили сделать полезную вещь, а именно - отображать в качестве документации содержимое файла README.md, дополнив навигацией по содержимому. Для этого сделали страницу doc.html.
+Сделали папку /var/www/docs
+   ```bash
+    sudo mkdir /var/www/docs
+   ```
+и скопировали в нее файлы ./Lab_1/doc.html, ./Lab_1/README.md 
+   ```bash
+    sudo cp ./Lab_1/doc.html ./Lab_1/README.md /var/www/docs
+   ```
+В эту же папку скопировали папку ./Lab_1/Screenshots со всем содержимым
+   ```bash
+    sudo cp -r ./Lab_1/Screenshots /var/www/docs
+   ```
 
+В сервисе "Наши заметки" настроили alias стразу на нашу папку /var/www/docs в качестве индекса отдали файл doc.html:
 
+   ```bash
+    sudo nano /etc/nginx/sites-available/notes-app
+   ```
+Добавили эту секцию:
+
+![img.png](Screenshots/alias.png)
+Если не забыли перечитать конфигурацию nginx
+   ```bash
+    sudo nginx -t
+    sudo service nginx reload
+   ```
+то по url http://notes.app/docs или https://notes.app/docs увидим такую красоту:
+
+![img.png](Screenshots/docs.png)
+
+### Закрываем админку
+Для начала проверили, установлена на ли утилита htpasswd:
+
+   ```bash
+    htpasswd -v
+   ```
+Если не установлена (у нас была не установлена), то ставим:  
+
+   ```bash
+    sudo apt update
+    sudo apt install -y apache2-utils
+   ```
+Создали отдельный закрытый каталог и файл:
+
+   ```bash
+    sudo install -d -o root -g www-data -m 750 /etc/nginx/auth
+   ```
+Добавили первого пользователя admin:
+
+   ```bash
+    sudo htpasswd -cB /etc/nginx/auth/notes-admin.htpasswd admin
+   ```
+Добавили location /admin в файл настройки сервиса "Наши заметки":
+   ```bash
+    sudo nano /etc/nginx/sites-available/notes-app
+   ```
+эту секцию:
+![img.png](Screenshots/admin_area.png)
+
+Если не забыли перечитать конфигурацию nginx
+   ```bash
+    sudo nginx -t
+    sudo service nginx reload
+   ```
+то по url http://notes.app/admin/ или https://notes.app/admin/ увидим стандартное окно браузера с запросом логина и пароля.
+
+![img.png](Screenshots/auth_page.png)
