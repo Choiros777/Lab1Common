@@ -545,3 +545,17 @@ sudo openssl req -x509 -nodes -newkey rsa:2048 \
 то по url http://notes.app/admin/ или https://notes.app/admin/ увидим стандартное окно браузера с запросом логина и пароля.
 
 ![img.png](Screenshots/auth_page.png)
+
+### Проверка 
+
+Редирект на https работает:
+
+![img.png](Screenshots/301MovedPermanently.png)
+
+При флуде запросами упираемся в `429`:
+
+![img.png](Screenshots/429TooManyRequests.png)
+
+`curl` на `/admin` без пароля → `401`:
+
+![img.png](Screenshots/401Unauthorized.png)
